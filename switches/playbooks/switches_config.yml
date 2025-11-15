@@ -1,0 +1,55 @@
+---
+- name: Configure Cisco switches
+  hosts: switches
+  gather_facts: no
+  collections:
+    - cisco.ios
+
+  tasks:
+
+    # 1. Налаштування пароля на привілейований режим (enable secret cisco)
+    - name: Configure enable secret password
+      ios_config:
+        lines:
+          - "enable secret {{ enable_secret }}"
+
+    # 2. Налаштування пароля на console line
+    - name: Configure console line password
+      ios_config:
+        parents: "line console 0"
+        lines:
+          - "password {{ console_password }}"
+          - "login"
+
+    # 3. Налаштування банера через ios_banner (НЕ ios_config!)
+    - name: Configure login banner
+      ios_banner:
+        banner: login
+        text: "{{ banner_login }}"
+        state: present
+
+    # 4. Створення VLAN 20 та 30
+    - name: Create VLANs
+      ios_config:
+        parents: "vlan {{ item.id }}"
+        lines:
+          - "name {{ item.name }}"
+      loop: "{{ vlans }}"
+
+    # 5. Налаштування access-портів для VLAN 20 і 30
+    - name: Configure access ports
+      ios_config:
+        parents: "interface {{ item.interface }}"
+        lines:
+          - "switchport mode access"
+          - "switchport access vlan {{ item.vlan }}"
+          - "spanning-tree portfast"
+      loop: "{{ access_ports }}"
+
+    # 6. Налаштування trunk-порту Gi0/1
+    - name: Configure trunk port
+      ios_config:
+        parents: "interface {{ trunk_port }}"
+        lines:
+          - "switchport mode trunk"
+          - "switchport trunk allowed vlan {{ trunk_allowed_vlans | join(',') }}"
