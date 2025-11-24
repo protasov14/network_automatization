@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <title>Налаштування маршрутизаторів Cisco</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  >
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <a href="/" class="btn btn-primary mb-3">&larr; На головну</a>
+
+    <h1 class="mb-4">Автоматизоване налаштування маршрутизаторів Cisco</h1>
+
+    <p class="mb-3">
+      Ви можете додати кілька маршрутизаторів і налаштувати <b>для кожного</b> власні інтерфейси,
+      DHCP, маршрути, протокол динамічної маршрутизації, користувачів та віддалений доступ.
+    </p>
+
+    <form method="post">
+
+      <div class="mb-3">
+        <h4 class="m-0">Маршрутизатори</h4>
+      </div>
+
+      <div id="routers-container"></div>
+
+      <div class="my-3">
+        <button type="button" class="btn btn-outline-primary" onclick="addRouterCard()">
+          Додати маршрутизатор
+        </button>
+      </div>
+
+      <button type="submit" class="btn btn-primary my-4">
+        Запустити налаштування маршрутизаторів
+      </button>
+    </form>
+
+    {% if error %}
+      <div class="alert alert-danger" role="alert">
+        <h5 class="alert-heading">Помилка під час виконання</h5>
+        <pre class="mb-0" style="white-space: pre-wrap;">{{ error }}</pre>
+      </div>
+    {% endif %}
+
+    {% if output %}
+      <div class="card">
+        <div class="card-header">
+          Результат виконання Ansible
+        </div>
+        <div class="card-body">
+          <pre class="mb-0" style="white-space: pre-wrap;">{{ output }}</pre>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- ========== ШАБЛОН КАРТКИ МАРШРУТИЗАТОРА ========== -->
+  <template id="router-card-template">
+    <div class="card mb-4 router-card" id="router-card-__IDX__" data-router-idx="__IDX__">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Маршрутизатор #__IDX__</strong>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRouterCard(__IDX__)">
+          Видалити
+        </button>
+      </div>
+      <div class="card-body">
+
+        <!-- Блок 0: IP-адреса -->
+        <div class="mb-3">
+          <label class="form-label">IP-адреса маршрутизатора</label>
+          <input
+            type="text"
+            class="form-control"
+            name="router___IDX___ip"
+            placeholder="Наприклад: 192.168.160.100"
+          >
+        </div>
+
+        <!-- Блок 1: Паролі та банер -->
+        <div class="mb-4">
+          <h5>Паролі та банер</h5>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Enable secret</label>
+              <input
+                type="text"
+                class="form-control"
+                name="router___IDX___enable_secret"
+                placeholder="Наприклад: cisco123"
+              >
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Пароль на console line</label>
+              <input
+                type="text"
+                class="form-control"
+                name="router___IDX___console_password"
+                placeholder="Пароль для консолі"
+              >
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Banner (login)</label>
+            <textarea
+              class="form-control"
+              rows="3"
+              name="router___IDX___banner_login"
+              placeholder="Текст банера при підключенні до маршрутизатора"
+            ></textarea>
+          </div>
+        </div>
+
+        <!-- Блок 2: Інтерфейси -->
+        <div class="mb-4">
+          <h5>Конфігурація інтерфейсів</h5>
+          <p class="text-muted">
+            Вкажіть інтерфейси, їх IP-адреси та маски.
+          </p>
+
+          <div id="router-__IDX__-interfaces-container"></div>
+
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary mt-2"
+            onclick="addInterfaceRow(__IDX__)"
+          >
+            Додати інтерфейс
+          </button>
+        </div>
+
+        <!-- Блок 3: DHCP-сервер -->
+        <div class="mb-4">
+          <h5>DHCP-сервер</h5>
+          <p class="text-muted">
+            Налаштування DHCP-пулів на цьому маршрутизаторі (опційно).
+          </p>
+
+          <div id="router-__IDX__-dhcp-pools-container"></div>
+
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary mt-2"
+            onclick="addDhcpPoolRow(__IDX__)"
+          >
+            Додати DHCP-пул
+          </button>
+        </div>
+
+        <!-- Блок 4: Статична маршрутизація -->
+        <div class="mb-4">
+          <h5>Статичні маршрути</h5>
+          <p class="text-muted">
+            Додайте статичні маршрути (якщо потрібні).
+          </p>
+
+          <div id="router-__IDX__-static-routes-container"></div>
+
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary mt-2"
+            onclick="addStaticRouteRow(__IDX__)"
+          >
+            Додати статичний маршрут
+          </button>
+        </div>
+
+        <!-- Блок 5: Динамічна маршрутизація -->
+        <div class="mb-4">
+          <h5>Динамічна маршрутизація</h5>
+
+          <div class="mb-3">
+            <label class="form-label">Протокол</label>
+            <select
+              class="form-select"
+              name="router___IDX___dynamic_protocol"
+              onchange="onProtocolChange(__IDX__)"
+              id="router-__IDX__-dynamic-protocol"
+            >
+              <option value="" selected>Не налаштовувати</option>
+              <option value="rip">RIP</option>
+              <option value="ospf">OSPF</option>
+              <option value="eigrp">EIGRP</option>
+              <option value="bgp">BGP</option>
+            </select>
+          </div>
+
+          <!-- Спільна частина для RIP / OSPF / EIGRP -->
+          <div id="router-__IDX__-dynamic-common" style="display: none;">
+            <h6>Мережі для динамічної маршрутизації</h6>
+
+            <div id="router-__IDX__-dynamic-networks-container"></div>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary mt-2"
+              onclick="addDynamicNetworkRow(__IDX__)"
+            >
+              Додати мережу
+            </button>
+          </div>
+
+          <!-- OSPF -->
+          <div id="router-__IDX__-ospf-options" style="display: none;" class="mt-3">
+            <h6>Параметри OSPF</h6>
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Process ID</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  name="router___IDX___ospf_process_id"
+                  placeholder="Наприклад: 1"
+                >
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Router-ID</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  name="router___IDX___ospf_router_id"
+                  placeholder="Наприклад: 1.1.1.1"
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- EIGRP -->
+          <div id="router-__IDX__-eigrp-options" style="display: none;" class="mt-3">
+            <h6>Параметри EIGRP</h6>
+            <div class="mb-3">
+              <label class="form-label">AS number</label>
+              <input
+                type="number"
+                class="form-control"
+                name="router___IDX___eigrp_as"
+                placeholder="Наприклад: 100"
+              >
+            </div>
+          </div>
+
+          <!-- BGP -->
+          <div id="router-__IDX__-bgp-options" style="display: none;" class="mt-3">
+            <h6>Параметри BGP</h6>
+            <div class="row">
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Local AS</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  name="router___IDX___bgp_as"
+                  placeholder="Наприклад: 65001"
+                >
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Neighbor IP</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  name="router___IDX___bgp_neighbor_ip"
+                  placeholder="IP сусіднього маршрутизатора"
+                >
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Neighbor remote AS</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  name="router___IDX___bgp_neighbor_remote_as"
+                  placeholder="AS сусіда"
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Блок 6: Користувачі -->
+        <div class="mb-4">
+          <h5>Створення користувачів</h5>
+          <p class="text-muted">
+            Локальні користувачі для авторизації на маршрутизаторі.
+          </p>
+
+          <div id="router-__IDX__-users-container"></div>
+
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary mt-2"
+            onclick="addUserRow(__IDX__)"
+          >
+            Створити нового користувача
+          </button>
+        </div>
+
+        <!-- Блок 7: Віддалений доступ -->
+        <div class="mb-2">
+          <h5>Налаштування віддаленого доступу (vty)</h5>
+          <p class="text-muted">
+            Оберіть, які протоколи будуть дозволені на line vty.
+          </p>
+
+          <div class="mb-3">
+            <label class="form-label">Режим доступу</label>
+            <select
+              class="form-select"
+              name="router___IDX___remote_access"
+            >
+              <option value="" selected disabled>Оберіть режим</option>
+              <option value="all">all (ssh + telnet)</option>
+              <option value="ssh">ssh</option>
+              <option value="telnet">telnet</option>
+              <option value="none">none</option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон інтерфейсу -->
+  <template id="interface-row-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-4">
+        <label class="form-label">Інтерфейс</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___if_name"
+          placeholder="FastEthernet0/1"
+        >
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">IP-адреса</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___if_ip"
+          placeholder="172.16.1.1"
+        >
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Маска</label>
+        <select class="form-select" name="router___IDX___if_mask">
+          <option value="">Оберіть маску</option>
+          <option value="255.255.255.255">/32 (255.255.255.255)</option>
+          <option value="255.255.255.252">/30 (255.255.255.252)</option>
+          <option value="255.255.255.248">/29 (255.255.255.248)</option>
+          <option value="255.255.255.240">/28 (255.255.255.240)</option>
+          <option value="255.255.255.224">/27 (255.255.255.224)</option>
+          <option value="255.255.255.192">/26 (255.255.255.192)</option>
+          <option value="255.255.255.128">/25 (255.255.255.128)</option>
+          <option value="255.255.255.0">/24 (255.255.255.0)</option>
+          <option value="255.255.254.0">/23 (255.255.254.0)</option>
+          <option value="255.255.252.0">/22 (255.255.252.0)</option>
+          <option value="255.255.248.0">/21 (255.255.248.0)</option>
+          <option value="255.255.240.0">/20 (255.255.240.0)</option>
+          <option value="255.255.224.0">/19 (255.255.224.0)</option>
+          <option value="255.255.192.0">/18 (255.255.192.0)</option>
+          <option value="255.255.128.0">/17 (255.255.128.0)</option>
+          <option value="255.255.0.0">/16 (255.255.0.0)</option>
+          <option value="255.254.0.0">/15 (255.254.0.0)</option>
+          <option value="255.252.0.0">/14 (255.252.0.0)</option>
+          <option value="255.248.0.0">/13 (255.248.0.0)</option>
+          <option value="255.240.0.0">/12 (255.240.0.0)</option>
+          <option value="255.224.0.0">/11 (255.224.0.0)</option>
+          <option value="255.192.0.0">/10 (255.192.0.0)</option>
+          <option value="255.128.0.0">/9 (255.128.0.0)</option>
+          <option value="255.0.0.0">/8 (255.0.0.0)</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-outline-danger mt-4" onclick="removeRow(this)">–</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон DHCP-пулу -->
+  <template id="dhcp-pool-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-3">
+        <label class="form-label">Pool name</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___dhcp_name"
+          placeholder="LAN1"
+        >
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Network</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___dhcp_network"
+          placeholder="172.16.1.0"
+        >
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Mask</label>
+        <select class="form-select" name="router___IDX___dhcp_mask">
+          <option value="255.255.255.0">/24 (255.255.255.0)</option>
+          <option value="255.255.255.128">/25 (255.255.255.128)</option>
+          <option value="255.255.255.192">/26 (255.255.255.192)</option>
+          <option value="255.255.255.224">/27 (255.255.255.224)</option>
+          <option value="255.255.255.240">/28 (255.255.255.240)</option>
+          <option value="255.255.255.248">/29 (255.255.255.248)</option>
+          <option value="255.255.255.252">/30 (255.255.255.252)</option>
+          <option value="255.255.0.0">/16 (255.255.0.0)</option>
+          <option value="255.0.0.0">/8 (255.0.0.0)</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Default gateway</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___dhcp_gateway"
+          placeholder="172.16.1.1"
+        >
+      </div>
+      <div class="col-md-4 mt-2">
+        <label class="form-label">DNS-server (опційно)</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___dhcp_dns"
+          placeholder="8.8.8.8"
+        >
+      </div>
+      <div class="col-md-2 mt-4">
+        <button type="button" class="btn btn-outline-danger" onclick="removeRow(this)">–</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон статичного маршруту -->
+  <template id="static-route-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-3">
+        <label class="form-label">Цільова мережа</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___static_dest"
+          placeholder="10.0.0.0"
+        >
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Маска</label>
+        <select class="form-select" name="router___IDX___static_mask">
+          <option value="255.255.255.0">/24 (255.255.255.0)</option>
+          <option value="255.255.255.128">/25 (255.255.255.128)</option>
+          <option value="255.255.255.192">/26 (255.255.255.192)</option>
+          <option value="255.255.255.224">/27 (255.255.255.224)</option>
+          <option value="255.255.255.240">/28 (255.255.255.240)</option>
+          <option value="255.255.255.248">/29 (255.255.255.248)</option>
+          <option value="255.255.255.252">/30 (255.255.255.252)</option>
+          <option value="255.255.0.0">/16 (255.255.0.0)</option>
+          <option value="255.0.0.0">/8 (255.0.0.0)</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Наступний хоп</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___static_next_hop"
+          placeholder="192.168.1.2"
+        >
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-outline-danger mt-4" onclick="removeRow(this)">–</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон мережі для динамічної маршрутизації -->
+  <template id="dynamic-network-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-4">
+        <label class="form-label">Мережа</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___dyn_net"
+          placeholder="10.0.0.0"
+        >
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Wildcard маска</label>
+        <select class="form-select" name="router___IDX___dyn_wildcard">
+          <option value="0.0.0.255">/24 (0.0.0.255)</option>
+          <option value="0.0.0.127">/25 (0.0.0.127)</option>
+          <option value="0.0.0.63">/26 (0.0.0.63)</option>
+          <option value="0.0.0.31">/27 (0.0.0.31)</option>
+          <option value="0.0.0.15">/28 (0.0.0.15)</option>
+          <option value="0.0.0.7">/29 (0.0.0.7)</option>
+          <option value="0.0.0.3">/30 (0.0.0.3)</option>
+          <option value="0.0.255.255">/16 (0.0.255.255)</option>
+          <option value="0.255.255.255">/8 (0.255.255.255)</option>
+        </select>
+      </div>
+      <div class="col-md-3 dyn-area-col" data-router-idx="__IDX__">
+        <label class="form-label">Area (для OSPF)</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___dyn_area"
+          placeholder="0"
+        >
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-outline-danger mt-4" onclick="removeRow(this)">–</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон користувача -->
+  <template id="user-row-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-4">
+        <label class="form-label">Username</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___user_name"
+          placeholder="admin"
+        >
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Privilege</label>
+        <input
+          type="number"
+          class="form-control"
+          name="router___IDX___user_privilege"
+          placeholder="15"
+        >
+      </div>
+      <div class="col-md-5">
+        <label class="form-label">Secret</label>
+        <input
+          type="text"
+          class="form-control"
+          name="router___IDX___user_secret"
+          placeholder="Пароль (secret)"
+        >
+      </div>
+    </div>
+  </template>
+
+  <script>
+    let routerIndex = 0;
+
+    function addRouterCard() {
+      const container = document.getElementById('routers-container');
+      const tpl = document.getElementById('router-card-template').innerHTML;
+      const idx = routerIndex++;
+
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+
+      // Мінімальний набір: один інтерфейс + один користувач
+      addInterfaceRow(idx);
+      addUserRow(idx);
+    }
+
+    function removeRouterCard(idx) {
+      const card = document.getElementById('router-card-' + idx);
+      if (card) {
+        card.remove();
+      }
+    }
+
+    function removeRow(button) {
+      const row = button.closest('.dynamic-row');
+      if (row) row.remove();
+    }
+
+    function addInterfaceRow(idx) {
+      const container = document.getElementById('router-' + idx + '-interfaces-container');
+      const tpl = document.getElementById('interface-row-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+    }
+
+    function addDhcpPoolRow(idx) {
+      const container = document.getElementById('router-' + idx + '-dhcp-pools-container');
+      const tpl = document.getElementById('dhcp-pool-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+    }
+
+    function addStaticRouteRow(idx) {
+      const container = document.getElementById('router-' + idx + '-static-routes-container');
+      const tpl = document.getElementById('static-route-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+    }
+
+    function addDynamicNetworkRow(idx) {
+      const container = document.getElementById('router-' + idx + '-dynamic-networks-container');
+      const tpl = document.getElementById('dynamic-network-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+
+      // Після додавання нового рядка одразу оновити видимість колонки Area
+      const select = document.getElementById('router-' + idx + '-dynamic-protocol');
+      const proto = select ? select.value : '';
+      updateAreaVisibility(idx, proto);
+    }
+
+    function addUserRow(idx) {
+      const container = document.getElementById('router-' + idx + '-users-container');
+      const tpl = document.getElementById('user-row-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+    }
+
+    function updateAreaVisibility(idx, proto) {
+      const areaCols = document.querySelectorAll('.dyn-area-col[data-router-idx="' + idx + '"]');
+      areaCols.forEach(col => {
+        col.style.display = (proto === 'ospf') ? 'block' : 'none';
+      });
+    }
+
+    function onProtocolChange(idx) {
+      const select = document.getElementById('router-' + idx + '-dynamic-protocol');
+      const proto = select.value;
+
+      const common = document.getElementById('router-' + idx + '-dynamic-common');
+      const ospf = document.getElementById('router-' + idx + '-ospf-options');
+      const eigrp = document.getElementById('router-' + idx + '-eigrp-options');
+      const bgp = document.getElementById('router-' + idx + '-bgp-options');
+
+      common.style.display = 'none';
+      ospf.style.display = 'none';
+      eigrp.style.display = 'none';
+      bgp.style.display = 'none';
+
+      if (!proto) {
+        updateAreaVisibility(idx, proto);
+        return;
+      }
+
+      if (proto === 'rip' || proto === 'ospf' || proto === 'eigrp') {
+        common.style.display = 'block';
+      }
+
+      if (proto === 'ospf') {
+        ospf.style.display = 'block';
+      } else if (proto === 'eigrp') {
+        eigrp.style.display = 'block';
+      } else if (proto === 'bgp') {
+        bgp.style.display = 'block';
+      }
+
+      updateAreaVisibility(idx, proto);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      // Додаємо хоча б один маршрутизатор за замовчуванням
+      addRouterCard();
+    });
+  </script>
+</body>
+</html>

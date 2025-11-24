@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <title>Налаштування комутаторів Cisco</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  >
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <a href="/" class="btn btn-primary mb-3">&larr; На головну</a>
+
+    <h1 class="mb-4">Автоматизоване налаштування комутаторів Cisco</h1>
+
+    <p class="mb-3">
+      Ви можете додати кілька комутаторів і налаштувати <b>для кожного</b> власні VLAN,
+      порти, паролі, банер, користувачів і віддалений доступ.
+    </p>
+
+    <form method="post">
+
+      <div class="mb-3">
+        <h4 class="m-0">Комутатори</h4>
+      </div>
+
+      <div id="switches-container"></div>
+
+      <div class="my-3">
+        <button type="button" class="btn btn-outline-primary" onclick="addSwitchCard()">
+          Додати комутатор
+        </button>
+      </div>
+
+      <button type="submit" class="btn btn-primary my-4">
+        Запустити налаштування комутаторів
+      </button>
+    </form>
+
+    {% if error %}
+      <div class="alert alert-danger" role="alert">
+        <h5 class="alert-heading">Помилка під час виконання</h5>
+        <pre class="mb-0" style="white-space: pre-wrap;">{{ error }}</pre>
+      </div>
+    {% endif %}
+
+    {% if output %}
+      <div class="card">
+        <div class="card-header">
+          Результат виконання Ansible
+        </div>
+        <div class="card-body">
+          <pre class="mb-0" style="white-space: pre-wrap;">{{ output }}</pre>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Шаблон картки комутатора -->
+  <template id="switch-card-template">
+    <div class="card mb-4 switch-card" id="switch-card-__IDX__" data-switch-idx="__IDX__">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Комутатор #__IDX__</strong>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSwitchCard(__IDX__)">
+          Видалити
+        </button>
+      </div>
+      <div class="card-body">
+
+        <!-- IP-адреса -->
+        <div class="mb-3">
+          <label class="form-label">IP-адреса комутатора</label>
+          <input
+            type="text"
+            class="form-control"
+            name="switch___IDX___ip"
+            placeholder="Наприклад: 192.168.160.10"
+          >
+        </div>
+
+        <!-- Паролі та банер -->
+        <div class="mb-4">
+          <h5>Паролі та банер</h5>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Enable secret</label>
+              <input
+                type="text"
+                class="form-control"
+                name="switch___IDX___enable_secret"
+                placeholder="Наприклад: cisco123"
+              >
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Пароль на console line</label>
+              <input
+                type="text"
+                class="form-control"
+                name="switch___IDX___console_password"
+                placeholder="Пароль для консолі"
+              >
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Banner (login)</label>
+            <textarea
+              class="form-control"
+              rows="3"
+              name="switch___IDX___banner_login"
+              placeholder="Текст банера при підключенні до комутатора"
+            ></textarea>
+          </div>
+        </div>
+
+        <!-- VLAN-и -->
+        <div class="mb-4">
+          <h5>Налаштування VLAN</h5>
+          <p class="text-muted">
+            Додайте один або кілька VLAN для цього комутатора.
+          </p>
+
+          <div id="switch-__IDX__-vlans-container"></div>
+
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary mt-2"
+            onclick="addVlanRow(__IDX__)"
+          >
+            Додати VLAN
+          </button>
+        </div>
+
+        <!-- Порти -->
+        <div class="mb-4">
+          <h5>Конфігурація портів</h5>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <h6>Access ports</h6>
+              <div id="switch-__IDX__-access-ports-container"></div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary mt-2"
+                onclick="addAccessPortRow(__IDX__)"
+              >
+                Додати Access port
+              </button>
+            </div>
+            <div class="col-md-6 mb-3">
+              <h6>Trunk ports</h6>
+              <div id="switch-__IDX__-trunk-ports-container"></div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary mt-2"
+                onclick="addTrunkPortRow(__IDX__)"
+              >
+                Додати Trunk port
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Користувачі -->
+        <div class="mb-4">
+          <h5>Створення користувачів</h5>
+          <p class="text-muted">
+            Локальні користувачі для авторизації на комутаторі.
+          </p>
+
+          <div id="switch-__IDX__-users-container"></div>
+
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary mt-2"
+            onclick="addUserRow(__IDX__)"
+          >
+            Створити нового користувача
+          </button>
+        </div>
+
+        <!-- Віддалений доступ -->
+        <div class="mb-2">
+          <h5>Налаштування віддаленого доступу (vty)</h5>
+          <p class="text-muted">
+            Оберіть, які протоколи будуть дозволені на line vty.
+          </p>
+
+          <div class="mb-3">
+            <label class="form-label">Режим доступу</label>
+            <select
+              class="form-select"
+              name="switch___IDX___remote_access"
+            >
+              <option value="" selected disabled>Оберіть режим</option>
+              <option value="all">all (ssh + telnet)</option>
+              <option value="ssh">ssh</option>
+              <option value="telnet">telnet</option>
+              <option value="none">none</option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон VLAN -->
+  <template id="vlan-row-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-3">
+        <label class="form-label">VLAN ID</label>
+        <input
+          type="number"
+          class="form-control"
+          name="switch___IDX___vlan_id"
+          placeholder="20"
+        >
+      </div>
+      <div class="col-md-7">
+        <label class="form-label">Назва VLAN</label>
+        <input
+          type="text"
+          class="form-control"
+          name="switch___IDX___vlan_name"
+          placeholder="Internet_access"
+        >
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-outline-danger mt-4" onclick="removeRow(this)">–</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон Access-порту -->
+  <template id="access-port-row-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-6">
+        <label class="form-label">Інтерфейс</label>
+        <input
+          type="text"
+          class="form-control"
+          name="switch___IDX___access_if"
+          placeholder="GigabitEthernet0/2"
+        >
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">VLAN ID</label>
+        <input
+          type="number"
+          class="form-control"
+          name="switch___IDX___access_vlan"
+          placeholder="20"
+        >
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-outline-danger mt-4" onclick="removeRow(this)">–</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон Trunk-порту -->
+  <template id="trunk-port-row-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-6">
+        <label class="form-label">Інтерфейс</label>
+        <input
+          type="text"
+          class="form-control"
+          name="switch___IDX___trunk_if"
+          placeholder="GigabitEthernet0/1"
+        >
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Allow VLANs</label>
+        <input
+          type="text"
+          class="form-control"
+          name="switch___IDX___trunk_vlans"
+          placeholder="20,30"
+        >
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-outline-danger mt-4" onclick="removeRow(this)">–</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Шаблон користувача -->
+  <template id="switch-user-row-template">
+    <div class="dynamic-row row align-items-end mb-2">
+      <div class="col-md-4">
+        <label class="form-label">Username</label>
+        <input
+          type="text"
+          class="form-control"
+          name="switch___IDX___user_name"
+          placeholder="admin"
+        >
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Privilege</label>
+        <input
+          type="number"
+          class="form-control"
+          name="switch___IDX___user_privilege"
+          placeholder="15"
+        >
+      </div>
+      <div class="col-md-5">
+        <label class="form-label">Secret</label>
+        <input
+          type="text"
+          class="form-control"
+          name="switch___IDX___user_secret"
+          placeholder="Пароль (secret)"
+        >
+      </div>
+    </div>
+  </template>
+
+  <script>
+    let switchIndex = 0;
+
+    function addSwitchCard() {
+      const container = document.getElementById('switches-container');
+      const tpl = document.getElementById('switch-card-template').innerHTML;
+      const idx = switchIndex++;
+
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+
+      // Мінімальний набір: один VLAN, один access port і один користувач
+      addVlanRow(idx);
+      addAccessPortRow(idx);
+      addUserRow(idx);
+    }
+
+    function removeSwitchCard(idx) {
+      const card = document.getElementById('switch-card-' + idx);
+      if (card) {
+        card.remove();
+      }
+    }
+
+    function removeRow(button) {
+      const row = button.closest('.dynamic-row');
+      if (row) row.remove();
+    }
+
+    function addVlanRow(idx) {
+      const container = document.getElementById('switch-' + idx + '-vlans-container');
+      const tpl = document.getElementById('vlan-row-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+    }
+
+    function addAccessPortRow(idx) {
+      const container = document.getElementById('switch-' + idx + '-access-ports-container');
+      const tpl = document.getElementById('access-port-row-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+    }
+
+    function addTrunkPortRow(idx) {
+      const container = document.getElementById('switch-' + idx + '-trunk-ports-container');
+      const tpl = document.getElementById('trunk-port-row-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+    }
+
+    function addUserRow(idx) {
+      const container = document.getElementById('switch-' + idx + '-users-container');
+      const tpl = document.getElementById('switch-user-row-template').innerHTML;
+      const html = tpl.replace(/__IDX__/g, idx);
+      container.insertAdjacentHTML('beforeend', html);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      // Додаємо хоча б один комутатор за замовчуванням
+      addSwitchCard();
+    });
+  </script>
+</body>
+</html>

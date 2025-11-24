@@ -1,0 +1,169 @@
+---
+- name: Configure Cisco routers
+  hosts: all
+  gather_facts: no
+  collections:
+    - cisco.ios
+
+  tasks:
+
+    # 1. Enable secret
+    - name: Configure enable secret password
+      ios_config:
+        lines:
+          - "enable secret {{ enable_secret | default('cisco') }}"
+      when: enable_secret is defined or enable_secret is not defined
+
+    # 2. Console line password
+    - name: Configure console line password
+      ios_config:
+        parents: "line console 0"
+        lines:
+          - "password {{ console_password | default('cisco') }}"
+          - "login"
+      when: console_password is defined or console_password is not defined
+
+    # 3. Banner
+    - name: Configure login banner
+      ios_banner:
+        banner: login
+        text: "{{ banner_login | default(default_banner) }}"
+        state: present
+      vars:
+        default_banner: |
+          ****************************************
+          *  UNAUTHORIZED ACCESS IS PROHIBITED  *
+          *    Authorized users only!           *
+          ****************************************
+
+    # 4. Інтерфейси
+    - name: Configure interfaces
+      ios_config:
+        lines:
+          - "interface {{ item.name }}"
+          - "ip address {{ item.ip }} {{ item.netmask }}"
+          - "no shutdown"
+      loop: "{{ interfaces | default([]) }}"
+      when: interfaces is defined and (interfaces | length) > 0
+
+    # 5. DHCP-сервер
+    - name: Configure DHCP pools
+      ios_config:
+        parents: "ip dhcp pool {{ item.name }}"
+        lines:
+          - "network {{ item.network }} {{ item.mask }}"
+          - "default-router {{ item.gateway }}"
+          - "dns-server {{ item.dns_server }}"
+      loop: "{{ dhcp_pools | default([]) }}"
+      when: dhcp_pools is defined and (dhcp_pools | length) > 0
+
+    # 6. Статичні маршрути
+    - name: Configure static routes
+      ios_config:
+        lines:
+          - "ip route {{ item.dest }} {{ item.mask }} {{ item.next_hop }}"
+      loop: "{{ static_routes | default([]) }}"
+      when: static_routes is defined and (static_routes | length) > 0
+
+    # 7. Динамічна маршрутизація - RIP
+    - name: Configure RIP base
+      ios_config:
+        parents: "router rip"
+        lines:
+          - "version 2"
+          - "no auto-summary"
+      when: dynamic_protocol == 'rip'
+
+    - name: Configure RIP networks
+      ios_config:
+        parents: "router rip"
+        lines:
+          - "network {{ item.network }}"
+      loop: "{{ dynamic_networks | default([]) }}"
+      when: dynamic_protocol == 'rip'
+            and dynamic_networks is defined and (dynamic_networks | length) > 0
+
+    # 8. Динамічна маршрутизація - OSPF
+    - name: Configure OSPF base
+      ios_config:
+        parents: "router ospf {{ ospf_process_id }}"
+        lines:
+          - "router-id {{ ospf_router_id | default('1.1.1.1') }}"
+      when: dynamic_protocol == 'ospf'
+            and ospf_process_id is defined and ospf_process_id
+
+    - name: Configure OSPF networks
+      ios_config:
+        parents: "router ospf {{ ospf_process_id }}"
+        lines:
+          - "network {{ item.network }} {{ item.wildcard }} area {{ item.area | default('0') }}"
+      loop: "{{ dynamic_networks | default([]) }}"
+      when: dynamic_protocol == 'ospf'
+            and ospf_process_id is defined and ospf_process_id
+            and dynamic_networks is defined and (dynamic_networks | length) > 0
+
+    # 9. Динамічна маршрутизація - EIGRP
+    - name: Configure EIGRP base
+      ios_config:
+        parents: "router eigrp {{ eigrp_as }}"
+        lines:
+          - "no auto-summary"
+      when: dynamic_protocol == 'eigrp'
+            and eigrp_as is defined and eigrp_as
+
+    - name: Configure EIGRP networks
+      ios_config:
+        parents: "router eigrp {{ eigrp_as }}"
+        lines:
+          - "network {{ item.network }} {{ item.wildcard }}"
+      loop: "{{ dynamic_networks | default([]) }}"
+      when: dynamic_protocol == 'eigrp'
+            and eigrp_as is defined and eigrp_as
+            and dynamic_networks is defined and (dynamic_networks | length) > 0
+
+    # 10. Динамічна маршрутизація - BGP (без network-рядків)
+    - name: Configure BGP base
+      ios_config:
+        parents: "router bgp {{ bgp_as }}"
+        lines: []
+      when: dynamic_protocol == 'bgp'
+            and bgp_as is defined and bgp_as
+
+    - name: Configure BGP neighbor
+      ios_config:
+        parents: "router bgp {{ bgp_as }}"
+        lines:
+          - "neighbor {{ bgp_neighbor_ip }} remote-as {{ bgp_neighbor_remote_as }}"
+      when: dynamic_protocol == 'bgp'
+            and bgp_as is defined and bgp_as
+            and bgp_neighbor_ip is defined and bgp_neighbor_ip
+            and bgp_neighbor_remote_as is defined and bgp_neighbor_remote_as
+
+    # 11. Локальні користувачі
+    - name: Configure local users
+      ios_config:
+        lines:
+          - "username {{ item.username }} privilege {{ item.privilege | default(15) }} secret {{ item.secret }}"
+      loop: "{{ users | default([]) }}"
+      when: users is defined and (users | length) > 0
+
+    # 12. Віддалений доступ (vty)
+    - name: Configure remote access on vty lines
+      ios_config:
+        parents: "line vty 0 4"
+        lines:
+          - "login local"
+          - "transport input {{ transport }}"
+      vars:
+        transport: >-
+          {% if remote_access == 'all' %}ssh telnet
+          {% elif remote_access == 'ssh' %}ssh
+          {% elif remote_access == 'telnet' %}telnet
+          {% elif remote_access == 'none' %}none
+          {% else %}ssh{% endif %}
+      when: remote_access is defined and remote_access | length > 0
+
+    # 13. Зберегти конфіг, якщо змінювався
+    - name: Save running-config if modified
+      ios_config:
+        save_when: modified
